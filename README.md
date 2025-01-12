@@ -10,7 +10,7 @@
 
 ## 数据集与模型下载
 
-代码已同步至github：
+代码已同步至github：[xyy9233/pytorch-CycleGAN-and-pix2pix: Image-to-Image Translation in PyTorch](https://github.com/xyy9233/pytorch-CycleGAN-and-pix2pix)
 
 并基于[官方开源的CycleGAN](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix)改进。
 
@@ -20,7 +20,8 @@ https://people.eecs.berkeley.edu/~taesung_park/CycleGAN/datasets/
 
 已经训练好的模型示例下载：
 
-链接：
+通过网盘分享的文件：datasets
+链接: https://pan.baidu.com/s/18pCqBzKosHn1SX3r9cR7-g?pwd=1895 提取码: 1895 
 
 ## 运行环境
 
@@ -32,7 +33,7 @@ https://people.eecs.berkeley.edu/~taesung_park/CycleGAN/datasets/
 
 ## 运行方式
 
-- 数据集下载好后解压置于datasets文件夹下。在datasets文件夹里提供了**monet2photo**, **vangogh2photo**, **facades** and **horse2zebra** 四个数据集
+- 在datasets文件夹里提供了**monet2photo**, **vangogh2photo**, **facades** and **horse2zebra** 四个数据集
 
 - 训练模型：
 
@@ -40,29 +41,12 @@ https://people.eecs.berkeley.edu/~taesung_park/CycleGAN/datasets/
   python train.py --dataroot ./datasets/horse2zebra --name 			horse2zebra_cyclegan --model cycle_gan
   ```
 
-  `--dataroot` ：使用的训练数据集的路径。
-
-  `--name` ：训练过程中的结果被保存的路径。
-
-  由于CycleGAN模型训练较为耗时，建议使用有高算力GPU的设备或服务器。没有GPU需要使用 `--gpu_id -1` 以在CPU上进行训练。
-
 - 测试模型
 
   ```shell
   python test.py --dataroot ./datasets/horse2zebra/testB --name horse2zebra_cyclegan_with_CBAM_B --model test --no_dropout
   ```
 
-  `--name`代表想要进行测试的模型的名称（分别与数据集相对应，存放在./checkpoints 文件夹下，可以通过 link 下载。
-
-  `testA / testB` 代表想要测试的图片生成方向。
-
-  没有GPU需要使用 `--gpu_id -1` 以在CPU上进行测试。
-
-  所有训练过的模型都存放在checkpoints文件夹下，以 {dataset name}\_cyclegan(\_with\_CBAM)\_{A or B} 的方式进行命名，如``horse2zebra_cyclegan_with_CBAM_B`` 、`facades_cyclegan_A`等。
-
-- ``with_CBAM``代表模型中使用了CBAM改进
-
-- `A or B` 代表加载不同方向的生成器，A代表生成 A to B 的图像，B代表生成 B to A 的图像
 
 ## 实验结果
 
