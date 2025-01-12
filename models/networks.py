@@ -3,6 +3,54 @@ import torch.nn as nn
 from torch.nn import init
 import functools
 from torch.optim import lr_scheduler
+import torch.nn.functional as F
+from torch.nn import Flatten, init
+
+class CBAM(nn.Module):
+    def __init__(self, in_channel, reduction_ratio=16):
+        super(CBAM, self).__init__()
+        self.channelFilter = ChannelFilter(in_channel, reduction_ratio)
+        self.spatialFilter = SpatialFilter()
+
+    def forward(self, x):
+        x_out = self.channelFilter(x)
+        x_out = self.spatialFilter(x_out)
+        return x_out
+
+
+class ChannelFilter(nn.Module):
+    def __init__(self, in_channel, reduction_ratio):
+        super(ChannelFilter, self).__init__()
+        self.in_channel = in_channel
+        self.mlp = nn.Sequential(
+            Flatten(),
+            nn.Linear(in_channel, in_channel // reduction_ratio),
+            nn.ReLU(),
+            nn.Linear(in_channel // reduction_ratio, in_channel)
+        )
+
+    def forward(self, x):
+        avg_pool = F.avg_pool2d(x, (x.size(2), x.size(3)), stride=(x.size(2), x.size(3)))
+        max_pool = F.max_pool2d(x, (x.size(2), x.size(3)), stride=(x.size(2), x.size(3)))
+        channel_attention = torch.sigmoid(self.mlp(avg_pool) + self.mlp(max_pool)).unsqueeze(2).unsqueeze(3).expand_as(
+            x)
+
+        return channel_attention * x
+
+
+class SpatialFilter(nn.Module):
+    def __init__(self, kernel_size=7):
+        super(SpatialFilter, self).__init__()
+        self.conv = nn.Conv2d(2, 1, kernel_size, stride=1, padding=(kernel_size - 1) // 2, bias=False)
+        self.batch_norm = nn.BatchNorm2d(1, eps=1e-5, momentum=0.01, affine=True)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x_filtered = torch.cat((torch.max(x, 1)[0].unsqueeze(1), torch.mean(x, 1).unsqueeze(1)), dim=1)
+        x_filtered = self.relu(self.batch_norm(self.conv(x_filtered)))
+        spatial_attention = torch.sigmoid(x_filtered)
+
+        return spatial_attention * x
 
 
 ###############################################################################
@@ -199,6 +247,8 @@ def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal'
         net = NLayerDiscriminator(input_nc, ndf, n_layers_D, norm_layer=norm_layer)
     elif netD == 'pixel':     # classify if each pixel is real or fake
         net = PixelDiscriminator(input_nc, ndf, norm_layer=norm_layer)
+    elif netD == 'CBAM':
+        net = NLayerDiscriminatorCBAM(input_nc, ndf, n_layers=3, norm_layer=norm_layer)
     else:
         raise NotImplementedError('Discriminator model name [%s] is not recognized' % netD)
     return init_net(net, init_type, init_gain, gpu_ids)
@@ -577,6 +627,56 @@ class NLayerDiscriminator(nn.Module):
         ]
 
         sequence += [nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
+        self.model = nn.Sequential(*sequence)
+
+    def forward(self, input):
+        """Standard forward."""
+        return self.model(input)
+
+class NLayerDiscriminatorCBAM(nn.Module):
+    """Defines a PatchGAN discriminator"""
+
+    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d):
+        """Construct a PatchGAN discriminator
+
+        Parameters:
+            input_nc (int)  -- the number of channels in input images
+            ndf (int)       -- the number of filters in the last conv layer
+            n_layers (int)  -- the number of conv layers in the discriminator
+            norm_layer      -- normalization layer
+        """
+        super(NLayerDiscriminatorCBAM, self).__init__()
+        if type(norm_layer) == functools.partial:  # no need to use bias as BatchNorm2d has affine parameters
+            use_bias = norm_layer.func == nn.InstanceNorm2d
+        else:
+            use_bias = norm_layer == nn.InstanceNorm2d
+
+        kw = 4
+        padw = 1
+        sequence = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)]
+        nf_mult = 1
+        nf_mult_prev = 1
+        for n in range(1, n_layers):  # gradually increase the number of filters
+            nf_mult_prev = nf_mult
+            nf_mult = min(2 ** n, 8)
+            sequence += [
+                nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
+                norm_layer(ndf * nf_mult),
+                CBAM(ndf * nf_mult),
+                nn.LeakyReLU(0.2, True)
+            ]
+
+        nf_mult_prev = nf_mult
+        nf_mult = min(2 ** n_layers, 8)
+        sequence += [
+            nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=1, padding=padw, bias=use_bias),
+            norm_layer(ndf * nf_mult),
+            CBAM(ndf * nf_mult),
+            nn.LeakyReLU(0.2, True)
+        ]
+
+        sequence += [
+            nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
         self.model = nn.Sequential(*sequence)
 
     def forward(self, input):
